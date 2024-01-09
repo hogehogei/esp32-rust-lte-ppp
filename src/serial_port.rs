@@ -11,7 +11,7 @@ pub struct SerialPort<'a> {
     uart: UartDriver<'a>,
 }
 
-static SERIAL_TRANSFER_TIMEOUT : u32 = 1000;
+static SERIAL_READ_TIMEOUT : u32 = 100;
 
 impl<'a> SerialPort<'a> {
     pub fn new( tx : impl Peripheral<P = impl OutputPin> + 'a,
@@ -35,7 +35,7 @@ impl<'a> SerialPort<'a> {
 
 impl<'a> io::Read for SerialPort<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.uart.read(buf, SERIAL_TRANSFER_TIMEOUT)
+        self.uart.read(buf, SERIAL_READ_TIMEOUT)
         .map_err(|esp_errcode| Error::new(ErrorKind::Other, esp_errcode))
     }
 }

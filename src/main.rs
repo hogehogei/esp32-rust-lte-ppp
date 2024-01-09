@@ -9,6 +9,9 @@ use esp_idf_svc::hal::uart::*;
 
 use anyhow::{anyhow, Context};
 
+const RETRY_TIME: i32 = 5;
+
+#[derive(PartialEq)]
 enum ModelReadSeq
 {
     BeginCR,
@@ -26,7 +29,7 @@ fn modem_wait_readline(serial_port: &mut SerialPort) -> Result<String, anyhow::E
     loop {
         let n = serial_port.read(&mut buf).with_context(|| "serial_port read error.")?;
         if n == 0 {
-            continue;
+            break;
         }
 
         match step {
@@ -54,48 +57,76 @@ fn modem_wait_readline(serial_port: &mut SerialPort) -> Result<String, anyhow::E
                     break;
                 }
             },
-            _ => {}
         }
     }
 
+    if step != ModelReadSeq::EndLF {
+        log::warn!("serial_port read cannot complete: {}", response);
+        return Ok(String::from(""))
+    }
+    
     Ok(response)
 }
 
 fn modem_wait_response(serial_port: &mut SerialPort) -> Result<String, anyhow::Error>
 {
-
     loop {
         let response = modem_wait_readline(serial_port)?;
         log::info!("Modem: [{}]", response);
         
+        if response == "" {
+            break;
+        }
         if response == "OK" {
-            return Ok(response)
+            return Ok(response);
         }
         if response.contains("ERROR") {
             return Err(anyhow!("AT command error response : {}", response));
         }
     }
+
+    Err(anyhow!("No correct response from modem."))
+}
+
+fn send_cmd(serial_port: &mut SerialPort, cmd: &str) -> Result<(), anyhow::Error>
+{
+    serial_port.write(cmd.as_bytes()).with_context( || "serial_port write error" )?;
+    modem_wait_response(serial_port)?;
+
+    Ok(())
+}
+
+fn send_cmd_retry(serial_port: &mut SerialPort, cmd: &str) -> Result<(), anyhow::Error>
+{
+    let mut err_n = 0;
+    
+    for _i in 0..RETRY_TIME {
+        match send_cmd(serial_port, cmd) {
+            Ok(_s) => { break; },
+            Err(e) => { err_n += 1; log::warn!("init_lte_modem Error: {}, retry cmd={}", e, cmd); }
+        }
+    }
+    if err_n >= RETRY_TIME {
+        return Err(anyhow!("send_cmd retry failed. cmd={}", cmd));
+    }
+    Ok(())
 }
 
 fn init_lte_modem(serial_port: &mut SerialPort) -> Result<(), anyhow::Error>
 {
     log::info!("init_lte_modem.");
-    
+
     const CSQ : &str = "AT+CSQ\r";
-    serial_port.write(CSQ.as_bytes()).with_context( || "serial_port write error" )?;
-    modem_wait_response(serial_port)?;
+    send_cmd_retry(serial_port, CSQ)?;
 
     const ATE0 : &str = "ATE0\r";
-    serial_port.write(ATE0.as_bytes()).with_context( || "serial_port write error" )?;
-    modem_wait_response(serial_port)?;
+    send_cmd_retry(serial_port, ATE0)?;
 
     const CGDCONT : &str = "AT+CGDCONT=1,\"IP\",\"povo.jp\"\r";
-    serial_port.write(CGDCONT.as_bytes()).with_context( || "serial_port write error" )?;
-    modem_wait_response(serial_port)?;
-
+    send_cmd_retry(serial_port, CGDCONT)?;
+    
     const ATD : &str = "ATD*99##\r";
-    serial_port.write(ATD.as_bytes()).with_context( || "serial_port write error" )?;
-    modem_wait_response(serial_port)?;
+    send_cmd_retry(serial_port, ATD)?;
 
     Ok(())
 }
