@@ -1,13 +1,23 @@
 #[path = "./serial_port.rs"]
 mod serial_port;
 use crate::serial_port::SerialPort;
-use std::io::{Read, Write};
+use std::io::{Read, Write, Error, ErrorKind};
+use std::fmt::Write as _;
 
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::hal::prelude::*;
 use esp_idf_svc::hal::uart::*;
-
 use anyhow::{anyhow, Context};
+
+#[path = "./ppp_device.rs"]
+mod ppp_device;
+use crate::ppp_device::PPPDevice;
+use ppproto::pppos::PPPoS;
+
+use smoltcp::iface::{Interface, SocketSet};
+use smoltcp::socket::tcp;
+use smoltcp::time::Instant;
+use smoltcp::wire::IpCidr;
 
 const RETRY_TIME: i32 = 5;
 
@@ -103,7 +113,10 @@ fn send_cmd_retry(serial_port: &mut SerialPort, cmd: &str) -> Result<(), anyhow:
     for _i in 0..RETRY_TIME {
         match send_cmd(serial_port, cmd) {
             Ok(_s) => { break; },
-            Err(e) => { err_n += 1; log::warn!("init_lte_modem Error: {}, retry cmd={}", e, cmd); }
+            Err(e) => { 
+                err_n += 1; 
+                log::warn!("init_lte_modem Error: {}, retry cmd={}", e, cmd); 
+            }
         }
     }
     if err_n >= RETRY_TIME {
@@ -153,6 +166,60 @@ fn main() -> anyhow::Result<(), anyhow::Error> {
 
     init_lte_modem(&mut serial_port)?;
 
-    loop {}
+    let ppp_config = ppproto::Config {
+        username: b"povo2.0",
+        password: b"",
+    };
+    let mut ppp = PPPoS::new(ppp_config);
+    ppp.open().map_err(|_e| Error::new(ErrorKind::Other, "ppp open() failed. InvalidStateError"))?;
+
+    let mut ppp_device = PPPDevice::new(ppp, serial_port);
+
+    let tcp_rx_buffer = tcp::SocketBuffer::new(vec![0; 64]);
+    let tcp_tx_buffer = tcp::SocketBuffer::new(vec![0; 128]);
+    let tcp_socket = tcp::Socket::new(tcp_rx_buffer, tcp_tx_buffer);
+
+    let mut iface_config = smoltcp::iface::Config::new(smoltcp::wire::HardwareAddress::Ip);
+    iface_config.random_seed = rand::random();
+    let mut iface = Interface::new(iface_config, &mut ppp_device, Instant::now());
+    let mut sockets = SocketSet::new(vec![]);
+    let tcp1_handle = sockets.add(tcp_socket);
+
+    loop {
+        let timestamp = Instant::now();
+        iface.poll(timestamp, &mut ppp_device, &mut sockets);
+
+        let status = ppp_device.ppp.status();
+
+        if let Some(ipv4) = status.ipv4 {
+            if let Some(want_addr) = ipv4.address {
+                // convert to smoltcp
+                let want_addr = smoltcp::wire::Ipv4Address::from_bytes(&want_addr.0);
+                iface.update_ip_addrs(|addrs| {
+                    if addrs.len() != 1 || addrs[0].address() != want_addr.into() {
+                        addrs.clear();
+                        addrs.push(IpCidr::new(want_addr.into(), 0)).unwrap();
+                        log::info!("Assigned a new IPv4 address: {}", want_addr);
+                    }
+                });
+            }
+        }
+
+        // tcp:6969: respond "hello"
+        {
+            let socket = sockets.get_mut::<tcp::Socket>(tcp1_handle);
+            if !socket.is_open() {
+                socket.listen(6969).unwrap();
+            }
+
+            if socket.can_send() {
+                log::info!("tcp:6969 send greeting");
+                write!(socket, "hello\n").unwrap();
+                log::info!("tcp:6969 close");
+                socket.close();
+            }
+        }
+    }
+
     Ok(())
 }

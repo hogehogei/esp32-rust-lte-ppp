@@ -31,6 +31,12 @@ impl<'a> SerialPort<'a> {
 
         return Ok(Self{uart})
     }
+
+    pub fn set_nonblocking(&self, _nonblocking: bool) -> io::Result<()>
+    {
+        // ノンブロッキング実装はとりあえずしない
+        Ok(())
+    }
 }
 
 impl<'a> io::Read for SerialPort<'a> {

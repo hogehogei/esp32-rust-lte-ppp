@@ -27,7 +27,9 @@ embassy = ["esp-idf-svc/embassy-sync", "esp-idf-svc/critical-section", "esp-idf-
 log = { version = "0.4", default-features = false }
 esp-idf-svc = { version = "0.47.3", default-features = false }
 anyhow = { version = "1.0.79" }
-regex = { version = "1.10.2" }
+ppproto = { version = "0.1.2" }
+smoltcp = { version = "0.11.0", default-features = false, features = [ "std", "log", "medium-ethernet", "medium-ip", "medium-ieee802154", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "proto-ipv6", "proto-dns", "proto-ipv4-fragmentation", "proto-sixlowpan-fragmentation", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp", "socket-dhcpv4", "socket-dns", "socket-mdns", "packetmeta-id", "async"] }
+rand = { version = "0.8.5" }
 
 [build-dependencies]
 embuild = "0.31.3"
