@@ -29,6 +29,7 @@ impl Device for PPPDevice {
 
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> 
     {
+        log::info!("PPPDevice->receive start.");
         self.port.set_nonblocking(true).unwrap();
 
         let mut tx_buf = [0; 2048];
@@ -37,15 +38,20 @@ impl Device for PPPDevice {
         let mut data: &[u8] = &[];
         loop {
             // Poll the ppp
+            log::info!("PPPDevice pooling start.");
             match self.ppp.poll(&mut tx_buf, &mut self.rx_buf) {
-                PPPoSAction::None => {}
+                PPPoSAction::None => {
+                    log::info!("PPPoSAction::None");
+                }
                 PPPoSAction::Transmit(n) => {
+                    log::info!("PPPoSAction::Transmit");
                     if let Err(e) = self.port.write_all(&tx_buf[..n]) {
                         log::warn!("error when PPPoSAction::Transmit, reason={}", e);
                         return None;
                     }
                 },
                 PPPoSAction::Received(range) => {
+                    log::info!("PPPoSAction::Received");
                     return Some((
                         PPPRxToken {
                             buf: &mut self.rx_buf[range],

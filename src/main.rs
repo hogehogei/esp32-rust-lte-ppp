@@ -12,7 +12,11 @@ use anyhow::{anyhow, Context};
 #[path = "./ppp_device.rs"]
 mod ppp_device;
 use crate::ppp_device::PPPDevice;
-use ppproto::pppos::PPPoS;
+use ppproto::pppos::{PPPoS, PPPoSAction};
+use ppproto::Config;
+
+#[path = "./dump.rs"]
+mod dump;
 
 use smoltcp::iface::{Interface, SocketSet};
 use smoltcp::socket::tcp;
@@ -90,6 +94,9 @@ fn modem_wait_response(serial_port: &mut SerialPort) -> Result<String, anyhow::E
         if response == "OK" {
             return Ok(response);
         }
+        if response.contains("CONNECT") {
+            return Ok(response)
+        }
         if response.contains("ERROR") {
             return Err(anyhow!("AT command error response : {}", response));
         }
@@ -166,30 +173,36 @@ fn main() -> anyhow::Result<(), anyhow::Error> {
 
     init_lte_modem(&mut serial_port)?;
 
-    let ppp_config = ppproto::Config {
+    let config = Config {
         username: b"povo2.0",
         password: b"",
     };
-    let mut ppp = PPPoS::new(ppp_config);
-    ppp.open().map_err(|_e| Error::new(ErrorKind::Other, "ppp open() failed. InvalidStateError"))?;
+    let mut ppp = PPPoS::new(config);
 
-    let mut ppp_device = PPPDevice::new(ppp, serial_port);
+    ppp.open().unwrap();
+    log::info!("PPP opened.");
 
-    let tcp_rx_buffer = tcp::SocketBuffer::new(vec![0; 64]);
-    let tcp_tx_buffer = tcp::SocketBuffer::new(vec![0; 128]);
-    let tcp_socket = tcp::Socket::new(tcp_rx_buffer, tcp_tx_buffer);
+    let mut device = PPPDevice::new(ppp, serial_port);
 
-    let mut iface_config = smoltcp::iface::Config::new(smoltcp::wire::HardwareAddress::Ip);
-    iface_config.random_seed = rand::random();
-    let mut iface = Interface::new(iface_config, &mut ppp_device, Instant::now());
+    let tcp1_rx_buffer = tcp::SocketBuffer::new(vec![0; 64]);
+    let tcp1_tx_buffer = tcp::SocketBuffer::new(vec![0; 128]);
+    let tcp1_socket = tcp::Socket::new(tcp1_rx_buffer, tcp1_tx_buffer);
+
+    let mut config = smoltcp::iface::Config::new(smoltcp::wire::HardwareAddress::Ip);
+    config.random_seed = rand::random();
+    let mut iface = Interface::new(config, &mut device, Instant::now());
+
     let mut sockets = SocketSet::new(vec![]);
-    let tcp1_handle = sockets.add(tcp_socket);
-
+    let tcp1_handle = sockets.add(tcp1_socket);
+    log::info!("TCP handle created.");
+    
     loop {
         let timestamp = Instant::now();
-        iface.poll(timestamp, &mut ppp_device, &mut sockets);
+        log::info!("PPP interface pooling start.");
+        iface.poll(timestamp, &mut device, &mut sockets);
+        log::info!("PPP interface pooling done.");
 
-        let status = ppp_device.ppp.status();
+        let status = device.ppp.status();
 
         if let Some(ipv4) = status.ipv4 {
             if let Some(want_addr) = ipv4.address {

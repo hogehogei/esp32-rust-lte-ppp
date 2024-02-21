@@ -7,6 +7,8 @@ use esp_idf_svc::hal::gpio;
 use esp_idf_svc::hal::gpio::*;
 use esp_idf_svc::io::Write;
 
+use crate::dump;
+
 pub struct SerialPort<'a> {
     uart: UartDriver<'a>,
 }
@@ -41,6 +43,9 @@ impl<'a> SerialPort<'a> {
 
 impl<'a> io::Read for SerialPort<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        log::info!("SerialPort::read");
+        dump::hexdump(buf);
+
         self.uart.read(buf, SERIAL_READ_TIMEOUT)
         .map_err(|esp_errcode| Error::new(ErrorKind::Other, esp_errcode))
     }
@@ -48,6 +53,9 @@ impl<'a> io::Read for SerialPort<'a> {
 
 impl<'a> io::Write for SerialPort<'a> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        log::info!("SerialPort::write");
+        dump::hexdump(buf);
+
         self.uart.write(buf)
         .map_err(|esp_errcode| Error::new(ErrorKind::Other, esp_errcode))
     }

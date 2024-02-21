@@ -13,19 +13,9 @@ opt-level = "s"
 debug = true    # Symbols are nice and they don't increase the size on Flash
 opt-level = "z"
 
-[features]
-default = ["std", "embassy", "esp-idf-svc/native"]
-
-pio = ["esp-idf-svc/pio"]
-std = ["alloc", "esp-idf-svc/binstart", "esp-idf-svc/std"]
-alloc = ["esp-idf-svc/alloc"]
-nightly = ["esp-idf-svc/nightly"]
-experimental = ["esp-idf-svc/experimental"]
-embassy = ["esp-idf-svc/embassy-sync", "esp-idf-svc/critical-section", "esp-idf-svc/embassy-time-driver"]
-
 [dependencies]
 log = { version = "0.4", default-features = false }
-esp-idf-svc = { version = "0.47.3", default-features = false }
+esp-idf-svc = { version = "0.48.0", features = ["nightly"] }
 anyhow = { version = "1.0.79" }
 ppproto = { version = "0.1.2" }
 smoltcp = { version = "0.11.0", default-features = false, features = [ "std", "log", "medium-ethernet", "medium-ip", "medium-ieee802154", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "proto-ipv6", "proto-dns", "proto-ipv4-fragmentation", "proto-sixlowpan-fragmentation", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp", "socket-dhcpv4", "socket-dns", "socket-mdns", "packetmeta-id", "async"] }
